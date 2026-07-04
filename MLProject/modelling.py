@@ -34,19 +34,17 @@ def load_and_preprocess_data():
 def main():
     X_train, X_test, y_train, y_test = load_and_preprocess_data()
     
-    # We don't set tracking URI here because MLflow project will use the environment variables
-    # set by GitHub Actions (MLFLOW_TRACKING_URI, MLFLOW_TRACKING_USERNAME, MLFLOW_TRACKING_PASSWORD)
-    mlflow.set_experiment("Heart_Attack_Prediction_CI")
+    # When called via 'mlflow run', MLflow already creates an active run.
+    # We just train and log directly — no need for set_experiment or start_run.
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
     
-    with mlflow.start_run():
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        
-        y_pred = model.predict(X_test)
-        acc = accuracy_score(y_test, y_pred)
-        
-        print(f"Model Accuracy (CI Workflow): {acc:.4f}")
-        mlflow.sklearn.log_model(model, "model")
+    y_pred = model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    
+    mlflow.log_metric("accuracy", acc)
+    mlflow.sklearn.log_model(model, "model")
+    print(f"Model Accuracy (CI Workflow): {acc:.4f}")
 
 if __name__ == "__main__":
     main()
