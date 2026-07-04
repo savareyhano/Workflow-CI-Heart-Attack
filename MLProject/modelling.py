@@ -44,7 +44,14 @@ def main():
     
     mlflow.log_metric("accuracy", acc)
     mlflow.sklearn.log_model(model, "model")
+    
+    # Save run_id to file so CI workflow can pick it up
+    run_id = mlflow.active_run().info.run_id
+    with open("run_id.txt", "w") as f:
+        f.write(run_id)
+    
     print(f"Model Accuracy (CI Workflow): {acc:.4f}")
+    print(f"RUN_ID: {run_id}")
 
 if __name__ == "__main__":
     main()
