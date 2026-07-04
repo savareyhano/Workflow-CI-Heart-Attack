@@ -1,0 +1,79 @@
+name: CI/CD Pipeline (Train & Deploy)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  train-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12.7
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12.7"
+          
+      - name: Check Environment variables
+        run: |
+          echo "Checking environment setup..."
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mlflow==2.19.0 pandas scikit-learn
+
+      - name: Set MLflow Tracking URI
+        run: |
+          echo "Setting up MLflow tracking URI"
+          # This runs before mlflow project run so it's in the environment
+
+      - name: Run MLflow Project
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          cd MLProject
+          # Note: mlflow run tries to use conda, but since we specify --env-manager local, it runs in the current pip env
+          mlflow run . --env-manager local
+
+      - name: Get latest MLflow run_id
+        id: get_run_id
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          RUN_ID=$(python -c "import mlflow; print(mlflow.search_runs(experiment_names=['Heart_Attack_Prediction_CI']).iloc[0].run_id)")
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "Found RUN_ID: $RUN_ID"
+
+      - name: Upload to GitHub (as Alternative to GDrive)
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlflow-artifacts
+          path: MLProject/
+
+      - name: Build Docker Model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          # Build docker image from mlflow run
+          mlflow models build-docker -m "runs:/${{ env.RUN_ID }}/model" -n ${{ secrets.DOCKER_USERNAME }}/heart-attack-model:latest
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/heart-attack-model:latest
